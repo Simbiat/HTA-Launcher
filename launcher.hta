@@ -1,0 +1,864 @@
+<meta http-equiv="content-type" content="text/html; charset=cp866" />
+  <html>
+    <head>
+      <title>Universal Launcher</title>
+        <script language="JavaScript">
+          function SortVBArray(arrVBArray, desc) {
+            newdb = arrVBArray.split("[dbmerg2]");
+            if (desc == 1) {
+              return newdb.sort().join('\b');
+            } else {
+              return newdb.sort().reverse().join('\b');
+            }
+           }
+        </script>
+        <script language="JavaScript">
+          window.onbeforeunload = function () {
+            if (document.getElementById("runact") != null && document.getElementById("runact").disabled == true) {
+              return "Some operation seems to be running. If you exit now it may break.";
+            } else {
+              window.close;
+            }
+          };
+        </script>
+<script language="vbscript">
+
+'*****************************************************************************************************
+' Declarations
+'*****************************************************************************************************
+
+Option Explicit
+Public Const ReadOnly = 1
+Public Const adTypeBinary=1, adTypeText=2
+Public Const adModeUnknown=0, adModeRead=1, adModeWrite=2, adModeReadWrite=3, adModeShareDenyRead=4, adModeShareDenyWrite=8, adModeShareExclusive=12, adModeShareDenyNone=16
+Public Const ForReading = 1, ForWriting = 2, ForAppending = 8
+Public Const TristateUseDefault = -2, TristateTrue = -1, TristateFalse = 0
+Public hashfileexe, hashinfile, hashoutfile
+Public objFSO, actions, objnet, oShell, xmlDoc, curws, excludeNodes, itter
+Public errflg, rflfregex, userCurrent
+Public sevzerbat, logfilearr
+Public launchtitle, commprod, userOperator, userISAdmin
+Public HTA_Log
+Public cellslist, cellel, fmaspbbat, fmamowbat
+Public tectiapath, prochashes, radbutact
+Public actionsdum
+Public Root_Server, re, inipath
+Public group1, group2, scripthash
+group1 = false
+group2 = false
+Set oShell = CreateObject("WScript.Shell")
+Set objNet = CreateObject("WScript.Network")
+Set objFSO = CreateObject("Scripting.FileSystemObject")
+Set xmlDoc = CreateObject("Microsoft.XMLDOM")
+userCurrent = objnet.UserDomain & "\" & objnet.UserName
+radbutact = ""
+logfilearr=Array(1)
+itter = 1
+
+'*****************************************************************************************************
+' Settings
+'*****************************************************************************************************
+
+Root_Server = "\\root_server"
+inipath = Root_Server & "\access.cfg"
+launchtitle = ""
+
+'*****************************************************************************************************
+' Users
+'*****************************************************************************************************
+
+curws = objNet.ComputerName
+
+'*****************************************************************************************************
+' Paths
+'*****************************************************************************************************
+
+'logs
+HTA_Log = ReadIni("Paths", "HTA_Log")
+'files
+hashfileexe = ReadIni("Files", "hashfileexe")
+hashinfile = ReadIni("Files", "hashinfile")
+hashoutfile = ReadIni("Files", "hashoutfile")
+
+'*****************************************************************************************************
+' Functions
+'*****************************************************************************************************
+'%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+' INI reader
+'%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+Function ReadIni(mySection, myKey)
+  ' This function returns a value read from an INI file
+  '
+  ' Arguments:
+  ' mySection [string] the section in the INI file to be searched
+  ' myKey [string] the key whose value is to be returned
+  '
+  ' Returns:
+  ' the [string] value for the specified key in the specified section
+  Dim intEqualPos
+  Dim objIniFile
+  Dim strFilePath, strKey, strLeftString, strLine, strSection
+  Set objFSO = CreateObject( "Scripting.FileSystemObject" )
+  ReadIni = ""
+  strFilePath = Trim( inipath )
+  strSection = Trim( mySection )
+  strKey = Trim( myKey )
+  If objFSO.FileExists( strFilePath ) Then
+    Set objIniFile = objFSO.OpenTextFile( strFilePath, ForReading, False )
+    Do While objIniFile.AtEndOfStream = False
+      strLine = Trim( objIniFile.ReadLine )
+      ' Check if section is found in the current line
+      If LCase( strLine ) = "[" & LCase( strSection ) & "]" Then
+        strLine = Trim( objIniFile.ReadLine )
+        ' Parse lines until the next section is reached
+        Do While Left( strLine, 1 ) <> "["
+          ' Find position of equal sign in the line
+          intEqualPos = InStr( 1, strLine, "=", 1 )
+          If intEqualPos > 0 Then
+            strLeftString = Trim( Left( strLine, intEqualPos - 1 ) )
+            ' Check if item is found in the current line
+            If LCase( strLeftString ) = LCase( strKey ) Then
+              ReadIni = Trim( Mid( strLine, intEqualPos + 1 ) )
+              ' Abort loop when item is found
+              Exit Do
+            End If
+          End If
+          ' Abort if the end of the INI file is reached
+          If objIniFile.AtEndOfStream Then Exit Do
+            ' Continue with next line
+            strLine = Trim( objIniFile.ReadLine )
+          Loop
+        Exit Do
+      End If
+    Loop
+    objIniFile.Close
+  Else
+    ReadIni = ""
+  End If
+End Function
+'%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+' User check
+'%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+Function UserCheck(Somestring)
+  if ReadIni("group1", Somestring) = Somestring Then
+    group1 = true
+  end if
+  if ReadIni("group2", Somestring) = Somestring Then
+    group2 = true
+  end if
+  if group1 = true and group2 = true Then
+    msgbox "User " & CStr(SomeString) & " is asigned to both group1 and group2!" & vbCRLF & "Script will exit!", 16, "Double assignment!"
+    window.close
+  End if
+End Function
+
+'%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+' Date formats
+'%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+Function dateyyymmdd()
+  dateyyymmdd=Year(Now()) & Right("0" &Month(Now()),2) & Right("0" & Day(Now()), 2)
+end function
+
+function timehhmmssmm()
+  timehhmmssmm=Right("00" & Hour(time()), 2) & ":" & Right("00" & Minute(time()), 2) & ":" & Right("00" & Second(time()), 2) & ":" & Right("0" & replace(cstr(timer * 100), ",", "0"), "2")
+end function
+
+function logstartline()
+  logstartline=" [" & timehhmmssmm() & "] [" & objNet.ComputerName & "] [" & userCurrent & "] "
+end function
+
+'%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+' Mark GUI elements on selection
+'%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+function SelectMe(n, c, selected_option, hash)
+  scripthash = hash
+  radbutact = selected_option
+  if Actions(n)(2) <> "" Then
+    statusbar.value = Actions(n)(2)
+  else
+    statusbar.value = "I'm just a lonely vbscript and I do not know much. You should know better what this button does, since it's your job to know"
+  End If
+  set cellslist = document.getElementsByTagName("td")
+  For each cellel in cellslist
+    cellel.style.backgroundColor="#e4eae4"
+    cellel.style.color="#000000"
+  Next
+  document.getElementById("td" & n).style.backgroundColor="#efefef"
+  document.getElementById("td" & n).style.color="#0000ff"
+  c.checked = true
+End function
+
+function MarkMe(n)
+  if document.getElementById("td" & n).disabled = false Then
+    if Actions(n)(2) <> "" Then
+      statusbar.value = Actions(n)(2)
+    else
+      statusbar.value = "I'm just a lonely vbscript and I do not know much. You should know better what this button does, since it's your job to know"
+    End If
+    document.getElementById("td" & n).style.backgroundColor="#efefef"
+  End if
+End function
+
+function UnMarkMe(n)
+  if document.getElementById("td" & n).disabled = false Then
+    statusbar.value = "Idle..."
+    set cellslist = document.getElementsByTagName("td")
+    if document.getElementById("td" & n).style.color <> "#0000ff" then
+      document.getElementById("td" & n).style.backgroundColor="#e4eae4"
+    end if
+  End if
+End function
+
+'%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+' Array sorting
+'%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+function bSort(arrShort, colmn, desc)
+  Dim olddb, tmpdb, tmpar
+  On Error resume next
+  itter = 1
+  Dim newdb()
+  ReDim newdb(1)
+  For olddb = 0 To (UBound(arrshort) - 1)
+    if itter > 1 Then
+      redim preserve newdb(itter)
+    End If
+    tmpar = arrshort(olddb)(0)
+    arrshort(olddb)(0) = arrshort(olddb)(colmn)
+    arrshort(olddb)(colmn) = tmpar
+    newdb(itter - 1) = Join(arrshort(olddb), "[dbmerg1]")
+    itter = itter + 1
+  Next
+  tmpdb = Split(SortVBArray(Join(newdb, "[dbmerg2]"), desc), Chr(8))
+  redim arrShort(UBound(tmpdb))
+  For olddb = 0 To (UBound(tmpdb) - 1)
+    if trim(tmpdb(olddb)) <> "" Then
+      arrShort(olddb) = Split(tmpdb(olddb), "[dbmerg1]")
+      tmpar = arrShort(olddb)(0)
+      arrShort(olddb)(0) = arrShort(olddb)(colmn)
+      arrShort(olddb)(colmn) = tmpar
+    else
+      arrShort(olddb) = array("", "", "", "", "")
+    end if
+  Next
+  bSort=arrShort
+  On Error goto 0
+end Function
+
+function bSortone(arrShort, desc)
+  bSortone=Split(SortVBArray(Join(arrShort, "[dbmerg2]"), desc), Chr(8))
+end function
+
+'%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+' Array reversal
+'%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+Sub Reverse(ByRef myArray)
+  Dim i, j, idxLast, idxHalf, strHolder
+  idxLast = UBound(myArray)
+  idxHalf = Int(idxLast/2)
+  For i = 0 To idxHalf
+    strHolder=myArray(i)
+    myArray(i)=myArray(idxLast-i)
+    myArray(idxLast-i) = strHolder
+  Next
+End Sub
+
+'%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+' Writing to file
+'%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+Function writeinfile(logfile, logline, gui, append, msgtype)
+  dim writelog
+  On Error Resume Next
+  If cstr(gui) = "1" or cstr(gui) = "" Then
+    statusbar.value = logline
+  elseif cstr(gui) = "0" Then
+    'Do Nothing
+  else
+    statusbar.value = gui
+  End if
+  On Error GoTo 0
+  Set writelog=objFSO.openTextfile(logfile, append, true)
+  writelog.WriteLine logline
+  writelog.close
+  On Error Resume Next
+  if cstr(gui) <> "0" Then
+    if msgtype = 1 Then
+      msgbox statusbar.value, vbOKOnly+vbInformation, "Info"
+    elseif msgtype = 2 Then
+      msgbox statusbar.value, vbOKOnly+vbExclamation, "Warning"
+    elseif msgtype = 3 Then
+      msgbox statusbar.value, vbOKOnly+vbCritical, "Error"
+    End if
+  End if
+  On Error GoTo 0
+End Function
+
+'%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+' Get unique values from array
+'%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+Function uniqFE(fex, colm)
+  Dim i
+  Dim dicTemp : Set dicTemp = CreateObject("Scripting.Dictionary")
+  For i=0 to (ubound(fex) - 1)
+    dicTemp(fex(i)(colm)) = 0
+    'dicTemp.add fex(i)(colm), fex(i)(colm)
+  Next
+  uniqFE = dicTemp.Keys()
+End Function
+
+'%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+' Option chooser
+'%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+Function DOIT
+  On Error Resume Next
+  document.getElementById("runact").disabled = true
+  document.getElementById("quitbutt").disabled = true
+  set cellslist = document.getElementsByTagName("td")
+  For each cellel in cellslist
+    If cellel.className = "optionrun" Then
+      cellel.disabled = true
+    End if
+  Next
+  On Error Goto 0
+  if radbutact = "" Then
+    call writeinfile (HTA_Log & dateyyymmdd() & ".log", "[Action ]" & logstartline() & "Needlessly bothering a sleepy button...", "Needlessly bothering a sleepy button...", ForAppending, 0)
+  else
+    call writeinfile (HTA_Log & dateyyymmdd() & ".log", "[Action ]" & logstartline() & "Running " & radbutact & "...", 0, ForAppending, 0)
+  end if
+  if radbutact = "" Then
+    Msgbox "Please, do not click me just for fun. Select an option first. Otherwise, please, do let me sleep a bit"
+  elseif radbutact = "VIEW_PROC_LOG" Then
+    ProcLogPage(txt_VIEW_PROC_LOG.value)
+  else
+    runarm(radbutact)
+  end if
+  On Error Resume Next
+  For each cellel in cellslist
+    If cellel.className = "optionrun" Then
+      cellel.disabled = false
+    End if
+  Next
+  document.getElementById("runact").disabled = false
+  document.getElementById("quitbutt").disabled = false
+  On Error Goto 0
+End Function
+
+'*****************************************************************************************************
+' GUI drawing / Logs page
+'*****************************************************************************************************
+
+function loglineclean(logline)
+  Set regxpclean = New RegExp
+  regxpclean.Global = True
+  regxpclean.IgnoreCase = True
+  regxpclean.Pattern = "[^\u0003-\u0005\u0020-\u007E\u0410-\u044F\u0401\u0451\u00AB\u00BB\u00A9\u00AE\u2116]"
+  logline = regxpclean.Replace(logline, "")
+  logline = replace(logline, "", "")
+  logline = replace(logline, "&", "&amp;")
+  logline = replace(logline, "<", "&lt;")
+  logline = replace(logline, ">", "&gt;")
+  logline = replace(logline, """", "&quot;")
+  logline = replace(logline, "'", "&#39;")
+  loglineclean = logline
+end function
+
+function arrfiller(logtype, logline)
+  logtime = ""
+  logws = ""
+  loguser = ""
+  logmsg = ""
+  logline = loglineclean(logline)
+  strpos = InStrRev(logline,"", -1)
+  If strpos > 0 Then
+    logline = right(logline, len(logline) - strpos)
+  end if
+  strpos = InStr(1, logline, "")
+  If strpos > 0 Then
+  else
+    stline = ""
+  End if
+  logline = trim(logline)
+  if logline <> "" Then
+    opbrms = InStr(1, logline, "")
+    If opbrms > 0 Then
+      logtype = logtype & trim(replace(left(logline, opbrms - 1), "", ""))
+      logline = right(logline, len(logline) - opbrms - 11)
+      opbrts = InStr(1, logline,"")
+      if opbrts <> 0 Then
+        logtime = replace(trim(left(logline, 11)), ".", ":")
+        logline = right(logline, len(logline) - opbrts)
+        opbrws = InStr(1, logline,"")
+        if opbrws <> 0 Then
+          logws = trim(left(logline, opbrws - 1))
+          logline = right(logline, len(logline) - opbrws)
+          opbruser = InStr(1, logline,"")
+          if opbruser <> 0 Then
+            loguser = trim(left(logline, opbruser - 1))
+          End if
+          logmsg = trim(replace(replace(right(logline, len(logline) - opbruser), "", ""), "", ": "))
+        else
+          logmsg = trim(replace(replace(right(logline, len(logline) - opbrws), "", ""), "", ": "))
+        End if
+      else
+        logmsg = trim(replace(replace(right(logline, len(logline) - opbrts), "", ""), "", ": "))
+      end if
+      if logtime <> "" or logws <> "" or loguser <> "" or logmsg <> "" then
+        if itter > 1 Then
+          redim preserve logfilearr(itter)
+        end if
+        logfilearr(itter - 1) = Array(logtype, logtime, logws, loguser, logmsg)
+        itter = itter + 1
+      end if
+    End if
+  End if
+end function
+
+Function ProcLogPage(procday)
+  'check value
+  if procday = "getvalue" then
+    procday = txt_logdate.value
+  end if
+
+  'building html
+  dim HTML
+  HTML = "<TABLE width=100% height=100% cellSpacing=0 cellPadding=7 style=""border: ridge 3px"" id = 'tbl'><tr><td unselectable='on' onselectstart='return false;' onmousedown='return false;' colspan=6><center><h2>Launcher<br>" & launchtitle & "</h2></center></td></tr>"
+  html = html & "<tr unselectable='on' onselectstart='return false;' onmousedown='return false;'><td style=""border-top: ridge 3px;"" align=center width=16%><b>Date</b></td><td style=""border-top: ridge 3px;"" align=center width=16%><b>Message type</b></td><td style=""border-top: ridge 3px;"" align=center width=16%><b>Workstation</b></td><td style=""border-top: ridge 3px;"" align=center width=16%><b>User</b></td><td style=""border-top: ridge 3px;"" align=center width=16%><b>Page</b></td><td style=""border-top: ridge 3px;"" align=center width=16%>&nbsp;</td></tr>"
+  html = html & "<tr><td style=""border-bottom: ridge 3px"" align=center width=16%><input type=textbox style=""background=#F8F8FF;width:100px;"" name=""txt_logdate"" value=""" & procday & """></td><td unselectable='on' onselectstart='return false;' onmousedown='return false;' style=""border-bottom: ridge 3px"" align=center width=16%>"
+  html = html & "<div name=""msgtypediv"" id=""msgtypediv""><select id=""msgtype"" name=""msgtype""><option value=""all"">All</option></select></div></td>"
+  html = html & "<td unselectable='on' onselectstart='return false;' onmousedown='return false;' style=""border-bottom: ridge 3px"" align=center width=16%><div id=""wsdiv"" name=""wsdiv""><select id=""workstation"" name=""workstation""><option value=""all"">All</option>"
+  html = html & "</select></div></td><td unselectable='on' onselectstart='return false;' onmousedown='return false;' style=""border-bottom: ridge 3px"" align=center width=16%><div id=""usernamediv"" name=""username""><select id=""username"" name=""username""><option value=""all"">All</option>"
+  html = html & "</select></div></td><td unselectable='on' onselectstart='return false;' onmousedown='return false;' style=""border-bottom: ridge 3px"" align=center width=16%><div id=""pagediv"" name=""pagediv""><select id=""page"" name=""page""><option value=""1"">1</option>"
+  html = html & "</select></div></td><td unselectable='on' onselectstart='return false;' onmousedown='return false;' style=""border-bottom: ridge 3px"" align=center width=16%><input style=""filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='white', endColorstr='lightblue',GradientType=0);"" type = button onclick=""vbscript:logoutput()"" value = ""Refresh"">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<input style=""filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='white', endColorstr='lightblue',GradientType=0);"" type = button onclick=""vbscript:CreateStartPage()"" value = ""Return"">&nbsp;<input id=""quitbutt"" style=""filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='white', endColorstr='lightblue',GradientType=0);"" type = button onclick=""jscript:window.close();"" value = ""Quit""></td></tr>"
+  html = html & "<tr height=100%><td colspan=6><div id=""logtable"" name=""logtable"" style=""height=100%;overflow:scroll;""></div></td></tr></table>"
+  astra_page.innerHTML = HTML
+  call logoutput()
+End Function
+
+function logoutput()
+  Dim re
+  call writeinfile (HTA_Log & dateyyymmdd() & ".log", "[Action ]" & logstartline() & "Running log query with """ & txt_logdate.value & """ as date, """ & msgtype.value & """ as log type, """ & workstation.value & """ as workstation, """ & username.value & """ as user, """ & page.value & """ as page ", "", ForAppending, 0)
+  Set re = New RegExp
+  re.Pattern = "^(\d{8})$"
+  if re.Test(txt_logdate.value) Then
+    If isdate(Mid(txt_logdate.value, 1, 4) & "." & Mid(txt_logdate.value, 5, 2) & "." & Mid(txt_logdate.value, 7, 2)) Then
+    else
+      call writeinfile (HTA_Log & dateyyymmdd() & ".log", "[Warning]" & logstartline() & "Parameter is not a correct date!", "Parameter provided does not seem like a correct date", ForAppending, 2)
+      exit function
+    End if
+  else
+    call writeinfile (HTA_Log & dateyyymmdd() & ".log", "[Warning]" & logstartline() & "Incorrect paramter format used!", "Only digits are allowed with total length of 8 characters", ForAppending, 2)
+    exit function
+  End if
+  redim logfilearr(1)
+  itter = 1
+  Dim logtype, logtime, logws, loguser, logmsg, opbrms, objTextFile, strnextline, opbrws, clbrws, opbrus, clbrus, msgtypehtml
+
+  On Error Resume Next
+  If objFSO.fileexists(HTA_Log & txt_logdate.value & ".log") Then
+    Set objTextFile = objFSO.openTextfile(HTA_Log & txt_logdate.value & ".log", ForReading)
+    Do Until objTextFile.AtEndOfStream
+      If itter > 1 Then
+        redim preserve logfilearr(itter)
+      end if
+      logtype = ""
+      logtime = ""
+      logws = ""
+      loguser = ""
+      logmsg = ""
+      opbrms = 1
+      strNextLine = objTextFile.Readline
+      if left(strNextLine, 1) = "[" and mid(strNextLine, 9, 1) = "]" Then
+        logtype = Trim(mid(strNextLine, 2, 7))
+      end if
+      if mid(strNextLine, 11, 1) = "[" and mid(strNextLine, 23, 1) = "]" Then
+        logtime = Trim(mid(strNextLine, 12, 11))
+      end if
+      opbrws = InStr(24, strNextLine,"[")
+      if opbrws <> 0 Then
+        clbrws = InStr(opbrws, strNextLine,"]")
+        opbrus = InStr(opbrws + 1, strNextLine,"[")
+        opbrms = clbrws + 1
+      else
+        clbrws = 0
+      end if
+      if clbrws <> 0 Then
+        clbrus = InStr(clbrws + 1, strNextLine,"]")
+        opbrms = clbrus + 1
+        logws = Trim(mid(strNextLine, opbrws + 1, clbrws - opbrws - 1))
+      end if
+      if clbrus <> 0 Then
+        loguser = Trim(mid(strNextLine, opbrus + 1, clbrus - opbrus - 1))
+      end if
+      logmsg = Trim(mid(strNextLine, opbrms))
+      logfilearr(itter - 1) = Array(logtype, logtime, logws, loguser, logmsg)
+      itter = itter + 1
+    Loop
+    objTextFile.Close
+  end if
+
+  logfilearr=bSort(logfilearr, 1, 1)
+  On Error Goto 0
+
+  msgtypehtml="<select id=""msgtype"" name=""msgtype""><option value=""all"">All</option>"
+  Dim temparr, filteradded, logtp, wshtml, userhtml, logline, lpages, pagehtml, pagecount, endline, stline
+  temparr=uniqFE(logfilearr, 0)
+  temparr=bSortone(temparr, 0)
+  Reverse temparr
+  filteradded = false
+  for each logtp in temparr
+    if logtp <> "" then
+      msgtypehtml = msgtypehtml & "<option value=""" & logtp & """"
+      if lcase(logtp) = lcase(msgtype.value) Then
+        msgtypehtml = msgtypehtml & " selected=""selected"""
+        filteradded = true
+      End if
+      msgtypehtml = msgtypehtml & ">" & logtp & "</option>"
+    end if
+  Next
+  if filteradded = false and lcase(msgtype.value) <> "all" Then
+    msgtypehtml = msgtypehtml & "<option value=""" & msgtype.value & """ selected=""selected"">" & msgtype.value & "</option>"
+  end if
+  msgtypehtml = msgtypehtml & "</select>"
+
+  wshtml="<select id=""workstation"" name=""workstation""><option value=""all"">All</option>"
+  temparr=uniqFE(logfilearr, 2)
+  temparr=bSortone(temparr, 0)
+  filteradded = false
+  for each logtp in temparr
+    if logtp <> "" Then
+      wshtml = wshtml & "<option value=""" & logtp & """"
+      if lcase(logtp) = lcase(workstation.value) Then
+        wshtml = wshtml & " selected=""selected"""
+        filteradded = true
+      End if
+      wshtml = wshtml & ">" & logtp & "</option>"
+    end if
+  Next
+  if filteradded = false and lcase(workstation.value) <> "all" Then
+    wshtml = wshtml & "<option value=""" & workstation.value & """ selected=""selected"">" & workstation.value & "</option>"
+  end if
+  wshtml = wshtml & "</select>"
+
+  userhtml="<select id=""username"" name=""username""><option value=""all"">All</option>"
+  temparr=uniqFE(logfilearr, 3)
+  temparr=bSortone(temparr, 0)
+  filteradded = false
+  for each logtp in temparr
+    if logtp <> "" Then
+      userhtml = userhtml & "<option value=""" & logtp & """"
+      if lcase(logtp) = lcase(username.value) Then
+        userhtml = userhtml & " selected=""selected"""
+        filteradded = true
+      End if
+      userhtml = userhtml & ">" & logtp & "</option>"
+    end if
+  Next
+  if filteradded = false and lcase(username.value) <> "all" Then
+    userhtml = userhtml & "<option value=""" & username.value & """ selected=""selected"">" & username.value & "</option>"
+  end if
+  userhtml = userhtml & "</select>"
+
+  dim filtlogfilearr()
+  redim filtlogfilearr(1)
+  itter = 1
+  for logline = (ubound(logfilearr) - 1) to 0 step -1
+    if (lcase(logfilearr(logline)(0)) = lcase(msgtype.value) OR lcase(msgtype.value) = "all") AND (lcase(logfilearr(logline)(2)) = lcase(workstation.value) OR lcase(workstation.value) = "all") AND (lcase(logfilearr(logline)(3)) = lcase(username.value) OR lcase(username.value) = "all") Then
+      if itter > 1 Then
+        redim preserve filtlogfilearr(itter)
+      End if
+      filtlogfilearr(itter - 1) = logfilearr(logline)
+      itter = itter + 1
+    end if
+  next
+  lpages = ubound(filtlogfilearr) / 500
+  if int(lpages) <> lpages Then
+    lpages = int(lpages) + 1
+  end if
+
+  if ubound(filtlogfilearr) / 500 > 0.002 Then
+    pagehtml="<select id=""page"" name=""page"">"
+    if int(page.value) > int(lpages) Then
+      page.value = 1
+    end if
+    for pagecount = 1 to lpages
+      pagehtml = pagehtml & "<option value=""" & pagecount & """"
+      if int(pagecount) = int(page.value) Then
+        pagehtml = pagehtml & " selected=""selected"""
+        filteradded = true
+      End if
+      pagehtml = pagehtml & ">" & pagecount & "</option>"
+    Next
+    pagehtml = pagehtml & "</select>"
+
+    logoutput = "<table cellpadding=2 cellspacing=0>"
+    if int(page.value) = 1 then
+      endline = 0
+    else
+      endline = (1 - 500 + 500 * int(page.value))
+    end if
+    if (ubound(filtlogfilearr) - 1) < (int(page.value) * 500) then
+      if ((int(page.value) * 500) - (ubound(filtlogfilearr) - 1)) <= 500 then
+        stline = (ubound(filtlogfilearr) - 1)
+      else
+        if (ubound(filtlogfilearr) - 1) <= 500 Then
+          stline = (ubound(filtlogfilearr) - 1)
+        else
+          stline = 500
+        end if
+      end if
+    elseif (ubound(filtlogfilearr) - 1) => (int(page.value) * 500) then
+      stline = endline + 499
+    end if
+    for logline = endline to stline
+      logoutput = logoutput & "<tr"
+      if lcase(filtlogfilearr(logline)(0)) = "action" Then
+        logoutput = logoutput & " style=""background-color:#EBF5FF;color:#000055"""
+      elseif lcase(filtlogfilearr(logline)(0)) = "filemover" Then
+        logoutput = logoutput & " style=""background-color:#F0F0F0;color:#000055"""
+      elseif lcase(filtlogfilearr(logline)(0)) = "error" or lcase(filtlogfilearr(logline)(0)) = "hasherr" Then
+        logoutput = logoutput & " style=""background-color:#FFEBEB;color:red"""
+      elseif lcase(filtlogfilearr(logline)(0)) = "warning" or lcase(filtlogfilearr(logline)(0)) = "hashwar" Then
+        logoutput = logoutput & " style=""background-color:#FFFFC8;color:#000042"""
+      elseif lcase(filtlogfilearr(logline)(0)) = "info" or lcase(filtlogfilearr(logline)(0)) = "hashok" Then
+        logoutput = logoutput & " style=""background-color:white;color:black"""
+      elseif lcase(filtlogfilearr(logline)(0)) = "ok" Then
+        logoutput = logoutput & " style=""background-color:#54C571;color:#006555"""
+      else
+        logoutput = logoutput & " style=""background-color:white;color:black"""
+      end if
+      if lcase(filtlogfilearr(logline)(0)) = "hasherr" or lcase(filtlogfilearr(logline)(0)) = "hashok" Then
+        filtlogfilearr(logline)(4) = replace(filtlogfilearr(logline)(4), "|||", "<br>")
+      end if
+      logoutput = logoutput & "><td>" & filtlogfilearr(logline)(0) & "</td><td>" & filtlogfilearr(logline)(1) & "</td><td>" & filtlogfilearr(logline)(2) & "</td><td>" & filtlogfilearr(logline)(3) & "</td><td width=100%>" & filtlogfilearr(logline)(4) & "</td></tr>"
+    next
+    logoutput = logoutput & "</table>"
+  else
+    pagehtml = "<select id=""page"" name=""page""><option value=""1"">1</option>"
+    logoutput = "Nothing to show"
+  End if
+  document.getElementById("logtable").innerHTML = logoutput
+  document.getElementById("msgtypediv").innerHTML = msgtypehtml
+  document.getElementById("wsdiv").innerHTML = wshtml
+  document.getElementById("usernamediv").innerHTML = userhtml
+  document.getElementById("pagediv").innerHTML = pagehtml
+  Dim content
+  Set content = document.getElementById("tbl")
+  window.resizeTo Document.ParentWindow.Screen.AvailWidth * 0.75, Document.ParentWindow.Screen.AvailHeight * 0.75
+  window.moveTo ((Document.ParentWindow.Screen.AvailWidth - document.body.clientWidth) / 2), ((Document.ParentWindow.Screen.AvailHeight - document.body.clientHeight) / 2)
+  redim logfilearr(1)
+end function
+
+'*****************************************************************************************************
+' Script start / hash check
+'*****************************************************************************************************
+
+function runarm(scripttorun)
+  dim fullpath, inFile, check, flog2, hashline
+  fullpath = Readini("Paths", "Batches") & scripttorun
+  if objFSO.fileexists(fullpath) Then
+    statusbar.value = "Hashing " & fullpath
+    set inFile=objFSO.CreateTextfile(hashinfile & scripttorun & ".txt",true)
+    inFile.WriteLine fullpath
+    inFile.Close
+    check=oShell.Run(hashfileexe & " -F " & hashinfile & scripttorun & ".txt " & hashoutfile & scripttorun & ".txt", 0, True)
+    if check=0 then
+      objFSO.DeleteFile hashinfile & scripttorun & ".txt",1
+      Set fLog2=objFSO.openTextfile(hashoutfile & scripttorun & ".txt", 1, false, 0)
+      hashline = fLog2.readline
+      hashline = fLog2.readline
+      flog2.close
+      objFSO.DeleteFile hashoutfile & scripttorun & ".txt",1
+    else
+      call writeinfile (HTA_Log & dateyyymmdd() & ".log", "[Error ]" & logstartline() & "Failed to check hash for " & fullpath, 0, ForAppending, 3)
+      exit function
+    end if
+    if scripthash <> hashline Then
+      call writeinfile (HTA_Log & dateyyymmdd() & ".log", "[Error ]" & logstartline() & "Hash mismatch for " & fullpath & " . File's hash is: " & hashline, "Hash mismatch! Check and update if needed!", ForAppending, 3)
+    else
+      oShell.Run "%comspec% /c call """ & fullpath & """", 1, False
+      statusbar.value = "Idle..."
+    end if
+  else
+    call writeinfile (HTA_Log & dateyyymmdd() & ".log", "[Error ]" & logstartline() & "Missing file " & fullpath, 0, ForAppending, 3)
+  end if
+end function
+
+'*****************************************************************************************************
+' GUI drawing / Start page
+'*****************************************************************************************************
+
+Function CreateStartPage()
+  'Action#("Title_shown_in_output (mandatory)", "routine_to_be_called (mandatory)",_
+  '	"tooltip_text (optional)", "type (radio, textbox, .etc. Optional. Radio-button by default)",_
+  '	"default_value (optional, mainly for textboxes)", "switch (optional checkbox switch)", "switch_tip (optional switch tooltip, switch name by default)", "group2 available", "group1 available", "hash")
+
+  ActionsDum=Array(Array("You have no power here!", "powerless", "You have no power here!", "", "", "", ""))
+
+  Actions=Array(_
+  Array("SCRIPT", "script.cmd", "description", "", "", "", "", true, false, "000000F0DD89FA867D0B2B44D708D3F6D339141C00367EEFC7CBC8222FD6BD00E551D0D9"),_
+  Array("View logs", "VIEW_PROC_LOG", "Run to view launcher logs. Use YYYYMMDD date format", "textbox", dateyyymmdd(), "", "", false, true, "")_
+  )
+
+  dim i,HTML
+  HTML = "<TABLE cellSpacing=0 cellPadding=7 style=""border: ridge 3px"" id = 'tbl'><tr><td unselectable='on' onselectstart='return false;' onmousedown='return false;' colspan=2><center><h2>Launcher<br>" & launchtitle & "</h2></center></td></tr>"
+  Dim scriptnum
+  scriptnum = 0
+  for i=Lbound(Actions) to ubound(Actions)
+    if (group2 = true and Actions(i)(7) = true) or (group1 = true and Actions(i)(8) = true) or (ReadIni(Actions(i)(1), userCurrent) = userCurrent) Then
+      If scriptnum Mod 2 = 0 Then
+        HTML = HTML & "<TR id=""optline"" style=""BORDER-BOTTOM-STYLE: solid"">"
+      End If
+      HTML = HTML & "<TD class=""optionrun"" id=""td" & i & """ width="
+      if i = ubound(Actions) AND scriptnum Mod 2 = 0 Then
+        HTML = HTML & "100% colspan=2"
+      Else
+        HTML = HTML & "50%"
+      End if
+      HTML = HTML & " style=""border: ridge 3px #F8F8FF"" onmouseout='vbscript:Call UnMarkMe(" & i & ")' onmouseover='vbscript:Call MarkMe(" & i & ")' onclick='vbscript:Call SelectMe(" & i & ", c" & i & ", """ & Actions(i)(1) & """, Actions(i)(9))'"
+      if Actions(i)(2) <> "" Then
+        HTML = HTML & " title=""" & Actions(i)(2) & """"
+      End if
+      HTML = HTML & "><div onselectstart='return false;' style=""float: left"" align=left><input type=radio id = ""c" & i & """ name=""radio"" value =""" & Actions(i)(1) & """>&nbsp;" & Actions(i)(0) & "</div>"
+      if Actions(i)(3) = "textbox" or Actions(i)(5) <> "" Then
+        HTML = HTML & "<div align=right>"
+      end if
+      if Actions(i)(3) = "textbox" Then
+        HTML = HTML & "<input type=textbox style=""float:right;background=#F8F8FF;width:100px;"" name=""txt_" & Actions(i)(1) & """ value=""" & Actions(i)(4) & """>"
+      End if
+      if Actions(i)(5) <> "" Then
+        HTML = HTML & "<label"
+        if Actions(i)(6) <> "" Then
+          HTML = HTML & " title=""" & Actions(i)(6) & """"
+        else
+          HTML = HTML & " title=""" & Actions(i)(5) & """"
+        End if
+        HTML = HTML & "><input name=""switch_" & Actions(i)(1) & """ placeholder=""" & Actions(i)(5) & """ type=""checkbox"">&nbsp;" & Actions(i)(5) & "</label>"
+      End if
+      if Actions(i)(3) = "textbox" or Actions(i)(5) <> "" Then
+        If i = ubound(Actions) AND scriptnum Mod 2 = 0 Then
+        else
+          HTML = HTML & "</div>"
+        End if
+      end if
+      HTML = HTML & "</td>"
+      If scriptnum Mod 2 <> 0 Then
+        HTML = HTML & "</TR>"
+      End If
+      scriptnum = scriptnum + 1
+    end If
+  next
+  HTML = HTML & "<tr><td width=50%>"
+  HTML = HTML & "<p><input id=""runact"" style=""filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='white', endColorstr='lightblue',GradientType=0);"" type = button onclick=""vbscript:DOIT"" value = ""Run option"">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<input id=""quitbutt"" style=""filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='white', endColorstr='lightblue',GradientType=0);"" type = button onclick=""jscript:window.close();"" value = "" Quit ""></td><td width=50%>"
+  HTML = HTML & "</td></tr>"
+  HTML = HTML & "<tr><td colspan=2><center><input style=""background=#F8F8FF;"" type=""text"" name=""statusbar"" id=""statusbar"" size=""100%"" value=""Idle..."" readonly></center>"
+  HTML = HTML & "</td></tr></table>"
+  astra_page.innerHTML = HTML
+  Dim content
+  Set content = document.getElementById("tbl")
+  window.resizeTo content.offsetWidth * 1.1, content.offsetHeight + 75
+End Function
+
+
+'*****************************************************************************************************
+' Onload operations
+'*****************************************************************************************************
+
+  On Error Resume Next
+  dim objWMISvc, colItems, objItem
+  Set objWMISvc = GetObject( "winmgmts:\\.\root\cimv2" )
+  Set colItems = objWMISvc.ExecQuery( "Select * from Win32_ComputerSystem", , 48 )
+  For Each objItem in colItems
+    userCurrent = objItem.UserName
+    call writeinfile (HTA_Log & dateyyymmdd() & ".log", "[Info ]" & logstartline() & "Launcher launched with " & objItem.UserName & " as Windows' user", 0, ForAppending, 0)
+  Next
+  Dim objService, Process, Process2, Process3, strNameOfUser, Return, iLoop, processtokill
+  call writeinfile (HTA_Log & dateyyymmdd() & ".log", "[Info ]" & logstartline() & "Launcher launched with " & objnet.UserDomain & "\" & objnet.UserName & " as active user", 0, ForAppending, 0)
+  set objService = getobject("winmgmts:")
+  call writeinfile (HTA_Log & dateyyymmdd() & ".log", "[Info ]" & logstartline() & "Checking for killable parent processes...", 0, ForAppending, 0)
+  for each Process in objService.InstancesOf("Win32_process")
+    If Process.name = "mshta.exe" Then
+      Return = Process.GetOwner(strNameOfUser)
+      if return = 0 Then
+        For iLoop = LBound(AllowedUsers) to UBound(AllowedUsers)
+          If CStr(AllowedUsers(iLoop)) = CStr(strNameOfUser) then
+            processtokill=Process.ParentProcessid
+            Exit For
+          End If
+        Next
+      End if
+      for each Process2 in objService.InstancesOf("Win32_process")
+        If Process2.ProcessId = processtokill And Process2.Name = "cmd.exe" Then
+          for each Process3 in objService.InstancesOf("Win32_process")
+            If Process3.ProcessId = Process2.ParentProcessid And Instr(lcase(Process3.Name), "cmd") >= 1 Then
+              Return2 = Process3.GetOwner(strNameOfUser2, strUserDomain2)
+              userCurrent = cstr(strUserDomain2) & "\" & CStr(strNameOfUser2)
+              call writeinfile (HTA_Log & dateyyymmdd() & ".log", "[Info ]" & logstartline() & "Launcher launched with " & cstr(strUserDomain2) & "\" & CStr(strNameOfUser2) & " as Windows' user", 0, ForAppending, 0)
+            End if
+          next
+          call writeinfile (HTA_Log & dateyyymmdd() & ".log", "[Action ]" & logstartline() & "Killing " & Process2.Name & " with ID=" & Process2.ProcessId, 0, ForAppending, 0)
+          Process2.Terminate
+          call writeinfile (HTA_Log & dateyyymmdd() & ".log", "[OK ]" & logstartline() & "Kill confirmed for " & Process2.Name & " with ID=" & Process2.ProcessId, 0, ForAppending, 0)
+          exit for
+        elseif Process2.ProcessId = processtokill And Instr(lcase(Process2.Name), "cmd") >= 1 Then
+          Return2 = Process3.GetOwner(strNameOfUser2, strUserDomain2)
+          userCurrent = cstr(strUserDomain2) & "\" & CStr(strNameOfUser2)
+          call writeinfile (HTA_Log & dateyyymmdd() & ".log", "[Info ]" & logstartline() & "Launcher launched with " & cstr(strUserDomain2) & "\" & CStr(strNameOfUser2) & " as Windows' user", 0, ForAppending, 0)
+        End if
+      next
+    End If
+  Next
+  On Error Goto 0
+  UserCheck(userCurrent)
+
+'*****************************************************************************************************
+' End of scripts, start of HTML code
+'*****************************************************************************************************
+</script>
+
+  <style>
+    body {
+      font: 10pt Tahoma;
+      color: #000000;
+      background-color:#e4eae4;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      -khtml-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      cursor: default;
+    }
+    table {
+      font: 10pt Tahoma;
+      color: #000000;
+      background-color:#e4eae4;
+    }
+    INPUT {
+      font: 10pt Tahoma;
+      color:#000000;
+    }
+  </style>
+
+  <HTA:APPLICATION ID="noApp" APPLICATIONNAME="Launcher" BORDER="thin" CAPTION="yes" ICON="app.ico"
+  SHOWINTASKBAR="yes" SINGLEINSTANCE="yes" SYSMENU="no" WINDOWSTATE="normal" SCROLL="yes" SCROLLFLAT="no"
+  VERSION="4.0" INNERBORDER="yes" SELECTION="yes" MAXIMIZEBUTTON="no" MINIMIZEBUTTON="no" NAVIGABLE="no"
+  CONTEXTMENU="no" BORDERSTYLE="normal">
+  </head>
+  <body>
+    <center><div id = "astra_page" name = "astra_page"></div></center>
+    <script language = "vbscript" >
+      CreateStartPage()
+      Dim content
+      Set content = document.getElementById("tbl")
+      window.resizeTo content.offsetWidth * 1.1, content.offsetHeight + 75
+      window.moveTo ((Document.ParentWindow.Screen.AvailWidth - document.body.clientWidth) / 2), ((Document.ParentWindow.Screen.AvailHeight - document.body.clientHeight) / 2)
+    </script>
+  </body>
+</html>
