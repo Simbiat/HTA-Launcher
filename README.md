@@ -9,3 +9,6 @@ You set up user access in the configuration file and add the scripts in HTA file
 All actions are logged into a logfile which can be viewed through this HTA like this (screenshot taken in 4K with scaling and does not represent real look; username is reducted): ![alt Logs sample](https://raw.githubusercontent.com/Simbiat/HTA-Launcher/master/luancherlogs.png)
 
 Some of the functions used here are also described in separate repositories.
+
+**_Disclaimer_**
+Portions of code are based on what was writen by previous coders
